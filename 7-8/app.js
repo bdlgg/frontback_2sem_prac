@@ -13,9 +13,9 @@ app.use(cors({
     allowedHeaders: ["Content-Type", "Authorization", "x-refresh-token"],
 }));
 const JWT_SECRET = "access_secret"
-const ACCESS_EXPIRES_IN = "15m"
+const ACCESS_EXPIRES_IN = "10s"
 const REFRESH_SECRET = "refresh_secret"
-const REFRESH_EXPIRES_IN = "7d";
+const REFRESH_EXPIRES_IN = "10s";
 const swaggerOptions = {
     definition: {
         openapi: '3.0.0',

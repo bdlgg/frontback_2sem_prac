@@ -30,7 +30,8 @@ export default function ProductsPage() {
             setCurrentUser(me);
         } catch (error) {
             console.error(error);
-            alert("Не удалось загрузить данные")
+            tokenStorage.clear();
+            alert(error?.response?.data?.error || "Сессия недействительная. Войдите заново")
         } finally {
             setLoading(false);
         }

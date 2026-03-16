@@ -40,7 +40,7 @@ export default function RegisterPage() {
             navigate("/login");
         } catch (error) {
             console.error(error);
-            alert(error?.response?.data?.error?.error || "Ошибка регистрации");
+            alert(error?.response?.data?.error || "Ошибка регистрации");
         } finally {
             setLoading(false);
         }
