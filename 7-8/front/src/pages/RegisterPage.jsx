@@ -8,6 +8,7 @@ export default function RegisterPage() {
         first_name: "",
         last_name: "",
         password: "",
+        role: "user"
     });
     const [loading, setLoading] = useState(false);
     const handleChange = (e) => {
@@ -35,6 +36,7 @@ export default function RegisterPage() {
                 first_name: form.first_name.trim(),
                 last_name: form.last_name.trim(),
                 password: form.password,
+                role: form.role
             });
             alert("Регистрация прошла успешно. Теперь войдите в систему");
             navigate("/login");
@@ -91,6 +93,18 @@ export default function RegisterPage() {
                             onChange={handleChange}
                             placeholder="Введите пароль"
                         />
+                    </label>
+                    <label className="label">
+                        Роль
+                        <select
+                            className="input"
+                            name="role"
+                            value={form.role}
+                            onChange={(e) => setForm({...form, role:e.target.value})}>
+                            <option value="user">Пользователь</option>
+                            <option value="seller">Продавец</option>
+                            <option value="admin">Админ</option>
+                        </select>
                     </label>
                     <button className="btn btn--primary btn--full" disabled={loading}>
                         {loading ? "Регистрируем..." : "Зарегистрироваться"}

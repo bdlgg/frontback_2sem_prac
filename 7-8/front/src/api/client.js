@@ -52,7 +52,7 @@ async function refreshTokensRequest(){
     if (!refreshToken){
         throw new Error("Refresh token отсутствует");
     }
-    const response = await axios.post(`${API_BASE_URL}/api/auth/register`, {},
+    const response = await axios.post(`${API_BASE_URL}/api/auth/refresh`, {},
         {
             headers: {
                 "x-refresh-token": refreshToken,
@@ -143,4 +143,21 @@ export const productsApi = {
         await apiClient.delete(`api/products/${id}`);
     }
 };
+export const usersApi = {
+    async getAll(){
+        const response = await apiClient.get('api/users');
+        return response.data;
+    },
+    async getUserById(id){
+        const response = await apiClient.get(`api/users/${id}`);
+        return response.data;
+    },
+    async update(id, payload){
+        const response = await apiClient.put(`api/users/${id}`, payload);
+        return response.data;
+    },
+    async remove(id){
+        await apiClient.delete(`api/users/${id}`);
+    }
+}
 export default apiClient;

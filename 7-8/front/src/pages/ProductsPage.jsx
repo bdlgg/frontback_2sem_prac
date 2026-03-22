@@ -2,7 +2,7 @@ import React, {useState, useEffect} from "react";
 import ProductList from "../components/ProductList.jsx";
 import ProductModal from "../components/ProductModal.jsx";
 import {authApi, productsApi, tokenStorage} from "../api/client.js";
-import {useNavigate} from "react-router-dom";
+import {Link, useNavigate} from "react-router-dom";
 
 export default function ProductsPage() {
     const navigate = useNavigate();
@@ -122,15 +122,22 @@ export default function ProductsPage() {
                     <button className="btn" onClick={handleLogout}>
                         Выйти
                     </button>
+                    {currentUser?.role === "admin" && (
+                        <Link to="/users" className="btn" style={{marginLeft: "16px"}}>
+                            Управление пользователями
+                        </Link>
+                    )}
                 </div>
             </header>
             <main className="main">
                 <div className="container">
                     <div className="toolbar">
                         <h1 className="title">Управление товарами</h1>
-                        <button className="btn btn--primary" onClick={openCreate}>
-                            + Создать товар
-                        </button>
+                        {currentUser && (currentUser.role === "seller" || currentUser.role === "admin") && (
+                            <button className="btn btn--primary" onClick={openCreate}>
+                                + Создать товар
+                            </button>
+                        )}
                     </div>
                     <form className="searchForm" onSubmit={handleSearchSubmit}>
                         <input
