@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="manifest" href="manifest.json">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="4285f4">
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Заметки 13 практика</title>
+    <link rel="stylesheet" href="https://unpkg.com/chota@latest">
+    <link rel="icon" href="icons/favicon.ico" sizes="16x16" type="image/ico">
+    <style>
+        body { padding: 20px;}
+        .note-item {border-bottom: 1px solid #ccc; padding: 10px 0;}
+        .offline-status {color: red; font-weight: bold; display: none;}
+        .offline-status.visible { display: block;}
+    </style>
+</head>
+<body>
+    <h1>А вот и "Заметки" - наше первое оффлайн-приложение</h1>
+    <div id="offline-indicator" class="offline-status">Вы в офлайне</div>
+    <form id="note-form" class="row">
+        <input class="col-9" type="text" id="note-input" placeholder="Введите заметку" required/>
+        <button class="col-3 button-primary" type="submit">добавить заметку</button>
+    </form>
+    <ul id="notes-list"></ul>
+    <script src="app.js"></script>
+</body>
+</html>
