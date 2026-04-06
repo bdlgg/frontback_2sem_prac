@@ -103,6 +103,9 @@ loadContent('home');
 function initNotes() {
     const form = document.getElementById('note-form');
     const input = document.getElementById('note-input');
+    const reminderForm = document.getElementById('reminder-form');
+    const reminderText = document.getElementById('reminder-text');
+    const reminderTime = document.getElementById('reminder-time');
     const list = document.getElementById('notes-list');
 
     function normalizeNotes(notes) {
@@ -113,7 +116,8 @@ function initNotes() {
             return {
                 id: note.id ?? Date.now() + Math.random(),
                 text: note.text ?? String(note),
-                datetime: note.datetime ?? ''
+                datetime: note.datetime ?? '',
+                reminder: note.reminder ?? null
             };
         });
     }
@@ -122,34 +126,65 @@ function initNotes() {
         const rawNotes = JSON.parse(localStorage.getItem('notes') || '[]');
         const notes = normalizeNotes(rawNotes);
         localStorage.setItem('notes', JSON.stringify(notes));
-        list.innerHTML = notes.map(note => `
+        list.innerHTML = notes.map(note => {
+            let reminderInfo = '';
+            if (note.reminder){
+                const date = new Date(note.reminder);
+                reminderInfo = `<br><small style="color: #e74c3c;">⏰ Напоминание: ${date.toLocaleString()}</small>`;
+            }
+            return `
             <li class="card" style="margin-bottom: 0.5rem; padding: 0.5rem;">
-                <div>${note.text}</div>
-                ${note.datetime ? `<small style="color: gray;">${note.datetime}</small>` : ''}
-            </li>
-        `).join('');
+                ${note.text}${reminderInfo}
+            </li>`
+        }).join('');
     }
 
-    function addNote(text, datetime = '') {
+    function addNote(text, reminderTimeStamp = null) {
         const rawNotes = JSON.parse(localStorage.getItem('notes') || '[]');
         const notes = normalizeNotes(rawNotes);
         notes.push({
             id: Date.now(),
             text,
-            datetime
+            datetime: reminderTimeStamp ? new Date(reminderTimeStamp).toLocaleString() : '',
+            reminder: reminderTimeStamp
         });
         localStorage.setItem('notes', JSON.stringify(notes));
         loadNotes();
-        socket.emit('newTask', { text, timestamp: Date.now() });
+        if (reminderTimeStamp){
+            socket.emit('newReminder', {
+                id: Date.now(),
+                text,
+                reminderTime: reminderTimeStamp
+            });
+        } else {
+            socket.emit('newTask', { text, timestamp: Date.now() });
+        }
     }
 
-    form.addEventListener('submit', (e) => {
+    form?.addEventListener('submit', (e) => {
         e.preventDefault();
         const text = input.value.trim();
         if (!text) return;
         addNote(text);
         input.value = '';
     });
+
+    reminderForm?.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const text = reminderText.value.trim();
+        const datetime = reminderTime.value;
+
+        if (text && datetime) {
+            const timestamp = new Date(datetime).getTime();
+            if (timestamp > Date.now()) {
+                addNote(text, timestamp);
+                reminderText.value = '';
+                reminderTime.value = '';
+            } else {
+                alert('Дата напоминания должна быть в будущем')
+            }
+        }
+    })
     loadNotes();
 }
 
