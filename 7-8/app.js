@@ -1,5 +1,6 @@
 const express = require("express");
 const {nanoid} = require("nanoid");
+const {createClient} = require("redis")
 const bcrypt = require("bcrypt");
 const swaggerJsdoc = require("swagger-jsdoc");
 const swaggerUi = require("swagger-ui-express");
@@ -10,6 +11,8 @@ const port = 3000;
 const ROLE_USER = 'user';
 const ROLE_SELLER = 'seller';
 const ROLE_ADMIN = 'admin';
+const USERS_CACHE_TTL = 60;
+const PRODUCTS_CACHE_TTL = 600;
 app.use(cors({
     origin: "http://localhost:5173",
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
@@ -33,12 +36,32 @@ const swaggerOptions = {
                 description: 'Локальный сервер',
             },
         ],
+        components: {
+            securitySchemes: {
+                bearerAuth: {
+                    type: 'http',
+                    scheme: 'bearer',
+                    bearerFormat: 'JWT',
+                    description: 'Введите токен без префикса "Bearer "'
+                }
+            }
+        }
     },
     apis: ['./app.js']
 };
 let users = []
 let products = []
 const refreshTokens = new Set();
+const redisClient = createClient({
+    url: "redis://127.0.0.1:6379"
+});
+redisClient.on("error", (err) => {
+    console.error("Redis error:", err);
+});
+async function initRedis() {
+    await redisClient.connect();
+    console.log("Redis connected");
+}
 function findProductOr404(id, res) {
     const product = products.find(p => p.id === id);
     if (!product) {
@@ -101,6 +124,59 @@ function roleMiddleware(allowedRoles){
         }
         next();
     };
+}
+
+function cacheMiddleware(keyBuilder, ttl){
+    return async (req, res, next) => {
+        try {
+            const key = keyBuilder(req);
+            const cachedData = await redisClient.get(key);
+            if (cachedData) {
+                return res.json({
+                    source: "cache",
+                    data: JSON.parse(cachedData)
+                })
+            }
+            req.cacheKey = key;
+            req.cacheTTL = ttl;
+            next();
+        } catch (err) {
+            console.error("Cache read error: ", err);
+            next();
+        }
+    };
+}
+
+async function saveToCache(key, data, ttl){
+    try {
+        await redisClient.set(key, JSON.stringify(data), {
+            EX: ttl
+        });
+    } catch (err) {
+        console.error("Cache save error:", err);
+    }
+}
+
+async function invalidateUsersCache(userId = null){
+    try {
+        await redisClient.del("users:all");
+        if (userId){
+            await redisClient.del(`users:${userId}`);
+        }
+    } catch (err){
+        console.error("Users cache invalidate error:", err);
+    }
+}
+
+async function invalidateProductsCache(productId=null){
+    try {
+        await redisClient.del("products:all");
+        if (productId){
+            await redisClient.del(`products:${productId}`);
+        }
+    } catch (err){
+        console.error("Products cache invalidate error:", err);
+    }
 }
 const swaggerSpec = swaggerJsdoc(swaggerOptions);
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
@@ -393,6 +469,8 @@ app.post('/api/auth/refresh', (req, res) => {
  *   post:
  *     summary: Создать товар (публичный)
  *     tags: [Products]
+ *     security:
+ *       - bearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -413,7 +491,7 @@ app.post('/api/auth/refresh', (req, res) => {
  *             schema: { $ref: '#/components/schemas/Product' }
  *       400: { description: "Некорректные данные" }
  */
-app.post('/api/products', authMiddleware, roleMiddleware([ROLE_SELLER, ROLE_ADMIN]), (req, res) => {
+app.post('/api/products', authMiddleware, roleMiddleware([ROLE_SELLER, ROLE_ADMIN]), async (req, res) => {
     const {title, category, description, price} = req.body;
     if (!title || price === undefined) {
         return res.status(400).json({ error: "title or price are required" });
@@ -426,6 +504,7 @@ app.post('/api/products', authMiddleware, roleMiddleware([ROLE_SELLER, ROLE_ADMI
         price: Number(price)
     };
     products.push(newProduct);
+    await invalidateProductsCache();
     res.status(201).json(newProduct);
 })
 
@@ -435,6 +514,8 @@ app.post('/api/products', authMiddleware, roleMiddleware([ROLE_SELLER, ROLE_ADMI
  *   get:
  *     summary: Получить список товаров (публичный)
  *     tags: [Products]
+ *     security:
+ *       - bearerAuth: []
  *     responses:
  *       200:
  *         description: Список товаров
@@ -445,7 +526,15 @@ app.post('/api/products', authMiddleware, roleMiddleware([ROLE_SELLER, ROLE_ADMI
  *               items: { $ref: '#/components/schemas/Product' }
  */
 
-app.get('/api/products', authMiddleware, roleMiddleware([ROLE_USER, ROLE_SELLER, ROLE_ADMIN]), (req, res) => {
+app.get('/api/products', authMiddleware, roleMiddleware([ROLE_USER, ROLE_SELLER, ROLE_ADMIN]), cacheMiddleware(() => "products:all", PRODUCTS_CACHE_TTL), async (req, res) => {
+    const data = products.map((p) => ({
+        id: p.id,
+        title: p.title,
+        category: p.category,
+        description: p.description,
+        price: p.price,
+    }))
+    await saveToCache(req.cacheKey, data, req.cacheTTL);
     res.json(products);
 })
 
@@ -472,9 +561,17 @@ app.get('/api/products', authMiddleware, roleMiddleware([ROLE_USER, ROLE_SELLER,
  *       401: { description: "Невалидный токен" }
  *       404: { description: "Товар не найден" }
  */
-app.get('/api/products/:id', authMiddleware, roleMiddleware([ROLE_USER, ROLE_SELLER, ROLE_ADMIN]), (req, res) => {
+app.get('/api/products/:id', authMiddleware, roleMiddleware([ROLE_USER, ROLE_SELLER, ROLE_ADMIN]), cacheMiddleware((req) => `products:${req.params.id}`, PRODUCTS_CACHE_TTL),async (req, res) => {
     const product = findProductOr404(req.params.id, res);
     if (!product) return;
+    const data = {
+        id: product.id,
+        title: product.title,
+        category: product.category,
+        description: product.description,
+        price: product.price
+    }
+    await saveToCache(req.cacheKey, data, req.cacheTTL);
     res.json(product);
 })
 
@@ -512,7 +609,7 @@ app.get('/api/products/:id', authMiddleware, roleMiddleware([ROLE_USER, ROLE_SEL
  *       401: { description: "Невалидный токен" }
  *       404: { description: "Товар не найден" }
  */
-app.put('/api/products/:id', authMiddleware, roleMiddleware([ROLE_SELLER, ROLE_ADMIN]), (req, res) => {
+app.put('/api/products/:id', authMiddleware, roleMiddleware([ROLE_SELLER, ROLE_ADMIN]), async (req, res) => {
     const product = findProductOr404(req.params.id, res);
     if (!product) return;
     const {title, category, description, price} = req.body;
@@ -523,6 +620,7 @@ app.put('/api/products/:id', authMiddleware, roleMiddleware([ROLE_SELLER, ROLE_A
     if (category !== undefined) product.category = category.trim();
     if (description !== undefined) product.description = description.trim();
     if (price !== undefined) product.price = Number(price);
+    await invalidateProductsCache(product.id)
     res.json(product);
 });
 
@@ -544,12 +642,14 @@ app.put('/api/products/:id', authMiddleware, roleMiddleware([ROLE_SELLER, ROLE_A
  *       401: { description: "Невалидный токен" }
  *       404: { description: "Товар не найден" }
  */
-app.delete('/api/products/:id', authMiddleware, roleMiddleware([ROLE_ADMIN]), (req, res) => {
+app.delete('/api/products/:id', authMiddleware, roleMiddleware([ROLE_ADMIN]), async (req, res) => {
     const idx = products.findIndex(p => p.id === req.params.id);
     if (idx === -1) {
         return res.status(404).json({ error: "product not found" });
     }
+    const deletedProduct = products[idx];
     products.splice(idx, 1);
+    await invalidateProductsCache(deletedProduct.id);
     res.status(204).send();
 })
 
@@ -566,8 +666,16 @@ app.delete('/api/products/:id', authMiddleware, roleMiddleware([ROLE_ADMIN]), (r
  *       200: { description: "Список пользователей" }
  *       403: { description: "Доступ запрещен" }
  */
-app.get('/api/users', authMiddleware, roleMiddleware([ROLE_ADMIN]), (req, res) => {
+app.get('/api/users', authMiddleware, roleMiddleware([ROLE_ADMIN]), cacheMiddleware(() => "users:all", USERS_CACHE_TTL), async (req, res) => {
     const safeUsers = users.map(({hashedPassword, ...user}) => user);
+    const data = users.map((u) => ({
+        id: u.id,
+        first_name: u.first_name,
+        last_name: u.last_name,
+        email: u.email,
+        role: u.role
+    }));
+    await saveToCache(req.cacheKey, data, req.cacheTTL);
     res.json(safeUsers);
 })
 
@@ -587,10 +695,18 @@ app.get('/api/users', authMiddleware, roleMiddleware([ROLE_ADMIN]), (req, res) =
  *       200: { description: "Данные пользователя" }
  *       404: { description: "Не найден" }
  */
-app.get('/api/users/:id', authMiddleware, roleMiddleware([ROLE_ADMIN]), (req, res) => {
+app.get('/api/users/:id', authMiddleware, roleMiddleware([ROLE_ADMIN]), cacheMiddleware((req) => `users:${req.params.id}`, USERS_CACHE_TTL), async (req, res) => {
     const user = users.find(u => u.id === req.params.id);
     if (!user) return res.status(404).json({ error: "user not found" });
     const {hashedPassword, ...safeUser} = user;
+    const data = {
+        id: user.id,
+        first_name: user.first_name,
+        last_name: user.last_name,
+        email: user.email,
+        role: user.role
+    }
+    await saveToCache(req.cacheKey, data, req.cacheTTL);
     res.json(safeUser);
 })
 
@@ -618,7 +734,7 @@ app.get('/api/users/:id', authMiddleware, roleMiddleware([ROLE_ADMIN]), (req, re
  *     responses:
  *       200: { description: "Обновлен" }
  */
-app.put('/api/users/:id', authMiddleware, roleMiddleware([ROLE_ADMIN]), (req, res) => {
+app.put('/api/users/:id', authMiddleware, roleMiddleware([ROLE_ADMIN]), async (req, res) => {
     const userIndex = users.findIndex(u => u.id === req.params.id);
     if (userIndex === -1) return res.status(404).json({ error: "user not found" });
     const {first_name, last_name, role} = req.body;
@@ -627,6 +743,7 @@ app.put('/api/users/:id', authMiddleware, roleMiddleware([ROLE_ADMIN]), (req, re
     if (last_name !== undefined) user.last_name = last_name;
     if (role !== undefined) user.role = role;
     const {hashedPassword, ...safeUser} = user;
+    await invalidateUsersCache(user.id)
     res.json(safeUser);
 })
 
@@ -645,10 +762,12 @@ app.put('/api/users/:id', authMiddleware, roleMiddleware([ROLE_ADMIN]), (req, re
  *     responses:
  *       204: { description: "Удален" }
  */
-app.delete('/api/users/:id', authMiddleware, roleMiddleware([ROLE_ADMIN]), (req, res) => {
+app.delete('/api/users/:id', authMiddleware, roleMiddleware([ROLE_ADMIN]), async (req, res) => {
     const idx = users.findIndex(u => u.id === req.params.id);
     if (idx === -1) return res.status(404).json({ error: "user not found" });
+    const deletedUser = users[idx];
     users.splice(idx, 1);
+    await invalidateUsersCache(deletedUser.id)
     res.status(204).send();
 })
 
@@ -662,9 +781,11 @@ app.use((err, req, res, next) => {
     res.status(500).json({ error: "internal server error" });
 })
 
-app.listen(port, () => {
-    console.log(`Сервер запущен на http://localhost:${port}`)
-    console.log(`swagger UI доступен по адресу http://localhost:${port}/api-docs `);
-});
+initRedis().then(() => {
+    app.listen(port, () => {
+        console.log(`Сервер запущен на http://localhost:${port}`)
+        console.log(`swagger UI доступен по адресу http://localhost:${port}/api-docs `);
+    });
+})
 
 

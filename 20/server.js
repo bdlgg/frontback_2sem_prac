@@ -1,6 +1,5 @@
 const mongoose = require('mongoose');
 const express = require('express');
-const {now} = require("mongoose");
 const app = express();
 
 mongoose.connect('mongodb://YourMongoAdmin:1234@localhost:27017/admin')
