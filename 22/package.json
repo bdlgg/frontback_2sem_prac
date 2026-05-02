@@ -1,0 +1,16 @@
+{
+  "name": "22",
+  "version": "1.0.0",
+  "description": "",
+  "main": "server1.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server1.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^5.2.1"
+  }
+}
