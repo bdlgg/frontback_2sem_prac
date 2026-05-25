@@ -138,7 +138,8 @@ const resolvers = {
 
 const server = new ApolloServer({
     typeDefs,
-    resolvers
+    resolvers,
+    csrfPrevention: false
 });
 
 const { url} = await startStandaloneServer(server, {
